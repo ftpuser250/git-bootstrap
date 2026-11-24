@@ -15,6 +15,7 @@ DRY_RUN=0
 SKIP_AUTH=0
 SKIP_SIGNING=0
 NONINTERACTIVE=0
+ORIGINAL_ARGS=("$@")
 for arg in "$@"; do
   case "$arg" in
     --dry-run) DRY_RUN=1;;
@@ -27,6 +28,10 @@ for arg in "$@"; do
 done
 
 trap 'err_report $LINENO' ERR
+# Root should not configure Git/SSH/GH credentials in /root for a workstation setup.
+if [[ $EUID -eq 0 && -z "${GIT_BOOTSTRAP_HANDOFF:-}" ]]; then
+  handoff_to_user
+fi
 banner "Linux Git & GitHub Bootstrap"
 detect_environment
 show_environment
