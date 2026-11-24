@@ -71,51 +71,66 @@ banner() { printf '\n\033[1;36m=========================================\n  %s\n
 # When invoked as root, offer to run the bootstrap as a regular account.
 handoff_to_user() {
   log "Running as root. Git and GitHub configuration should normally belong to a regular user."
-  local users=() u choice username home shell
+  local users=() u choice username home shell i staging status
+  TARGET_USER=""
   while IFS=: read -r username _ uid _ _ home shell; do
     if [[ "$uid" =~ ^[0-9]+$ ]] && (( uid >= 1000 && uid < 60000 )) && [[ "$shell" != */nologin && "$shell" != */false ]] && [[ "$username" != "nobody" ]]; then users+=("$username"); fi
   done < <(getent passwd)
   if (( NONINTERACTIVE )); then
-    warn "Non-interactive root run: proceeding as root. Use --non-interactive as a regular user for personal setup."
-    return
+    die "Refusing to configure Git/SSH/GitHub as root in non-interactive mode. Run as a regular user, or omit --non-interactive to select/create one."
   fi
   if ((${#users[@]})); then
     printf '\nAvailable regular users:\n'
-    local i=1
+    i=1
     for u in "${users[@]}"; do printf '  %d) %s\n' "$i" "$u"; ((i+=1)); done
     printf '  %d) Create a new user\n' "$i"
     read -r -p "Choose user [1-$i]: " choice || choice=""
     if [[ "$choice" =~ ^[0-9]+$ ]] && (( choice>=1 && choice<=${#users[@]} )); then
       u=${users[choice-1]}
     elif [[ "$choice" == "$i" ]]; then
-      u=$(create_bootstrap_user)
-      [[ -n "$u" ]] || return
+      create_bootstrap_user || return 1
+      u="$TARGET_USER"
     else
-      warn "Invalid selection; continuing as root."
-      return
+      die "Invalid selection; refusing to continue as root."
     fi
   else
     warn "No regular user accounts found."
-    if ask "Create a regular user now?" y; then u=$(create_bootstrap_user); else return; fi
-    [[ -n "$u" ]] || return
+    ask "Create a regular user now?" y || die "A regular user is required."
+    create_bootstrap_user || return 1
+    u="$TARGET_USER"
   fi
   home=$(getent passwd "$u" | cut -d: -f6)
+  [[ -n "$home" ]] || die "Could not determine home directory for $u."
+
+  # The original script may live under /root, which the selected user cannot traverse.
+  # Stage a temporary copy in a user-accessible location and remove it after execution.
+  staging=$(mktemp -d /tmp/git-bootstrap-handoff.XXXXXX) || die "Could not create staging directory."
+  cp -a "$SCRIPT_DIR/." "$staging/" || { rm -rf "$staging"; die "Could not stage project files."; }
+  chown -R "$u":"$(id -gn "$u")" "$staging" || { rm -rf "$staging"; die "Could not set staging ownership."; }
   log "Re-launching bootstrap as $u (HOME=$home)."
-  export GIT_BOOTSTRAP_HANDOFF=1
-  exec runuser -u "$u" -- env HOME="$home" USER="$u" LOGNAME="$u" GIT_BOOTSTRAP_HANDOFF=1 bash "$SCRIPT_DIR/bootstrap.sh" "${ORIGINAL_ARGS[@]}"
+  set +e
+  runuser -u "$u" -- env HOME="$home" USER="$u" LOGNAME="$u" GIT_BOOTSTRAP_HANDOFF=1 bash "$staging/bootstrap.sh" "${ORIGINAL_ARGS[@]}"
+  status=$?
+  set -e
+  rm -rf "$staging"
+  exit "$status"
 }
 
 create_bootstrap_user() {
   local username
+  TARGET_USER=""
   username=$(ask_value "New username" "")
   [[ -n "$username" ]] || { warn "Username cannot be empty."; return 1; }
-  if getent passwd "$username" >/dev/null; then warn "User already exists: $username"; printf '%s' "$username"; return 0; fi
-  if (( DRY_RUN )); then log "Dry-run: would create user $username and set password"; printf '%s' "$username"; return 0; fi
+  if getent passwd "$username" >/dev/null; then
+    warn "User already exists: $username"
+    TARGET_USER="$username"
+    return 0
+  fi
+  if (( DRY_RUN )); then warn "Dry-run: user creation is not performed."; return 1; fi
   if command -v useradd >/dev/null; then
     useradd -m -s "$(command -v bash)" "$username" || { warn "Failed to create user."; return 1; }
-    # Add to a conventional sudo-capable group where present.
     if getent group sudo >/dev/null; then usermod -aG sudo "$username"; elif getent group wheel >/dev/null; then usermod -aG wheel "$username"; fi
     passwd "$username" || warn "Password setup failed; user created without a usable password."
   else warn "useradd not available."; return 1; fi
-  printf '%s' "$username"
+  TARGET_USER="$username"
 }
