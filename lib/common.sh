@@ -112,7 +112,7 @@ handoff_to_user() {
     create_bootstrap_user || return 1
     u="$TARGET_USER"
   fi
-
+  TARGET_USER="$u"
   home=$(getent passwd "$u" | cut -d: -f6)
   [[ -n "$home" ]] || die "Could not determine home directory for $u."
 
