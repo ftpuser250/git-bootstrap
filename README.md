@@ -3,6 +3,8 @@
 A modular Bash bootstrap utility for Git, GitHub CLI (`gh`), SSH, `tldr`, `nano`, SSH-agent setup, and SSH-based commit/tag signing.
 
 Oh, btw, you might need this link : `https://killercoda.com/playgrounds/scenario/ubuntu`
+it's recommended to switch to a normal user if root. create user if needed. 
+you can do that with `su - ubuntu`
 
 ## Supported package managers
 
