@@ -9,7 +9,7 @@ detect_environment() {
   elif command -v zypper >/dev/null 2>&1; then PKG_MANAGER=zypper
   elif command -v apk >/dev/null 2>&1; then PKG_MANAGER=apk
   fi
-  if [[ -n "${SYSTEMD_EXEC_PID:-}" ]] || command -v systemctl >/dev/null 2>&1 && systemctl --user show-environment >/dev/null 2>&1; then INIT_SYSTEM=systemd-user; fi
+  if command -v systemctl >/dev/null 2>&1 && systemctl --user show-environment >/dev/null 2>&1; then INIT_SYSTEM=systemd-user; fi
   DE=${XDG_CURRENT_DESKTOP:-${DESKTOP_SESSION:-unknown}}
   XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-"/run/user/$(id -u)"}
 }
