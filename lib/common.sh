@@ -67,3 +67,55 @@ Usage: ./bootstrap.sh [options]
 USAGE
 }
 banner() { printf '\n\033[1;36m=========================================\n  %s\n=========================================\033[0m\n' "$*"; }
+
+# When invoked as root, offer to run the bootstrap as a regular account.
+handoff_to_user() {
+  log "Running as root. Git and GitHub configuration should normally belong to a regular user."
+  local users=() u choice username home shell
+  while IFS=: read -r username _ uid _ _ home shell; do
+    if [[ "$uid" =~ ^[0-9]+$ ]] && (( uid >= 1000 && uid < 60000 )) && [[ "$shell" != */nologin && "$shell" != */false ]] && [[ "$username" != "nobody" ]]; then users+=("$username"); fi
+  done < <(getent passwd)
+  if (( NONINTERACTIVE )); then
+    warn "Non-interactive root run: proceeding as root. Use --non-interactive as a regular user for personal setup."
+    return
+  fi
+  if ((${#users[@]})); then
+    printf '\nAvailable regular users:\n'
+    local i=1
+    for u in "${users[@]}"; do printf '  %d) %s\n' "$i" "$u"; ((i+=1)); done
+    printf '  %d) Create a new user\n' "$i"
+    read -r -p "Choose user [1-$i]: " choice || choice=""
+    if [[ "$choice" =~ ^[0-9]+$ ]] && (( choice>=1 && choice<=${#users[@]} )); then
+      u=${users[choice-1]}
+    elif [[ "$choice" == "$i" ]]; then
+      u=$(create_bootstrap_user)
+      [[ -n "$u" ]] || return
+    else
+      warn "Invalid selection; continuing as root."
+      return
+    fi
+  else
+    warn "No regular user accounts found."
+    if ask "Create a regular user now?" y; then u=$(create_bootstrap_user); else return; fi
+    [[ -n "$u" ]] || return
+  fi
+  home=$(getent passwd "$u" | cut -d: -f6)
+  log "Re-launching bootstrap as $u (HOME=$home)."
+  export GIT_BOOTSTRAP_HANDOFF=1
+  exec runuser -u "$u" -- env HOME="$home" USER="$u" LOGNAME="$u" GIT_BOOTSTRAP_HANDOFF=1 bash "$SCRIPT_DIR/bootstrap.sh" "${ORIGINAL_ARGS[@]}"
+}
+
+create_bootstrap_user() {
+  local username
+  username=$(ask_value "New username" "")
+  [[ -n "$username" ]] || { warn "Username cannot be empty."; return 1; }
+  if getent passwd "$username" >/dev/null; then warn "User already exists: $username"; printf '%s' "$username"; return 0; fi
+  if (( DRY_RUN )); then log "Dry-run: would create user $username and set password"; printf '%s' "$username"; return 0; fi
+  if command -v useradd >/dev/null; then
+    useradd -m -s "$(command -v bash)" "$username" || { warn "Failed to create user."; return 1; }
+    # Add to a conventional sudo-capable group where present.
+    if getent group sudo >/dev/null; then usermod -aG sudo "$username"; elif getent group wheel >/dev/null; then usermod -aG wheel "$username"; fi
+    passwd "$username" || warn "Password setup failed; user created without a usable password."
+  else warn "useradd not available."; return 1; fi
+  printf '%s' "$username"
+}
