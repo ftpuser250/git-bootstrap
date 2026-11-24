@@ -145,7 +145,13 @@ handoff_to_user() {
   set -e
 
   rm -rf "$staging"
-  exit "$status"
+
+  if (( status == 0 )); then
+    log "Setup completed. Switching to $TARGET_USER."
+    exec su - "$TARGET_USER"
+  else
+    exit "$status"
+  fi
 }
 
 
