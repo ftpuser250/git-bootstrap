@@ -2,6 +2,8 @@
 
 A modular Bash bootstrap utility for Git, GitHub CLI (`gh`), SSH, `tldr`, `nano`, SSH-agent setup, and SSH-based commit/tag signing.
 
+Oh, btw, you might need this link : `https://killercoda.com/playgrounds/scenario/ubuntu`
+
 ## Supported package managers
 
 - Arch Linux / pacman
