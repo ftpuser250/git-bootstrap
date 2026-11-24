@@ -13,7 +13,15 @@ configure_signing() {
   if ask "Enable signed commits globally?" y; then run git config --global commit.gpgsign true; fi
   if ask "Enable signed tags globally?" y; then run git config --global tag.gpgsign true; fi
   if (( DRY_RUN )); then log "Would register SSH signing key with GitHub and update allowed_signers."; return; fi
-  gh ssh-key add "$signing_choice" --type signing --title "${HOSTNAME:-linux}-signing" || warn "Signing key upload failed or key may already be registered."
+  # Check existing signing-key registrations before attempting an upload.
+  local key_body key_list
+  key_body=$(awk '{print $2}' "$signing_choice")
+  key_list=$(gh ssh-key list --json key,type 2>/dev/null || true)
+  if [[ "$key_list" == *"$key_body"* ]]; then
+    log "Signing key already registered with GitHub; skipping upload."
+  else
+    gh ssh-key add "$signing_choice" --type signing --title "${HOSTNAME:-linux}-signing" || warn "Signing key upload failed."
+  fi
   publine=$(cat "$signing_choice")
   local entry="$email $publine"
   if [[ -f "$allowed" ]] && grep -Fxq "$entry" "$allowed"; then log "Signer already present in allowed_signers."; else
