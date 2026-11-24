@@ -109,7 +109,8 @@ handoff_to_user() {
   chown -R "$u":"$(id -gn "$u")" "$staging" || { rm -rf "$staging"; die "Could not set staging ownership."; }
   log "Re-launching bootstrap as $u (HOME=$home)."
   set +e
-  runuser -u "$u" -- env HOME="$home" USER="$u" LOGNAME="$u" GIT_BOOTSTRAP_HANDOFF=1 bash "$staging/bootstrap.sh" "${ORIGINAL_ARGS[@]}"
+  # runuser -u "$u" -- env HOME="$home" USER="$u" LOGNAME="$u" GIT_BOOTSTRAP_HANDOFF=1 bash "$staging/bootstrap.sh" "${ORIGINAL_ARGS[@]}"
+  runuser -u "$u" -- env HOME="$home" USER="$u" LOGNAME="$u" GIT_BOOTSTRAP_HANDOFF=1 bash -c 'cd "$HOME" || exit 1; exec bash "$1" "${@:2}"' _ "$SCRIPT_DIR/bootstrap.sh" "${ORIGINAL_ARGS[@]}"
   status=$?
   set -e
   rm -rf "$staging"
