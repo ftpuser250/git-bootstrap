@@ -28,5 +28,5 @@ CFG
 )
   replace_managed_block "$ssh_dir/config" "# BEGIN git-bootstrap" "# END git-bootstrap" "$block"
   if (( DRY_RUN == 0 )); then chmod 600 "$ssh_dir/config"; fi
-  if [[ -f "$SSH_KEY" ]] && (( DRY_RUN == 0 )); then ssh-add "$SSH_KEY" || warn "Could not add SSH key. Check that an agent is running."; fi
+  # if [[ -f "$SSH_KEY" ]] && (( DRY_RUN == 0 )); then ssh-add "$SSH_KEY" || warn "Could not add SSH key. Check that an agent is running."; fi
 }
