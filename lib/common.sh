@@ -69,23 +69,36 @@ USAGE
 banner() { printf '\n\033[1;36m=========================================\n  %s\n=========================================\033[0m\n' "$*"; }
 
 # When invoked as root, offer to run the bootstrap as a regular account.
+
+
 handoff_to_user() {
   log "Running as root. Git and GitHub configuration should normally belong to a regular user."
+
   local users=() u choice username home shell i staging status
   TARGET_USER=""
+
   while IFS=: read -r username _ uid _ _ home shell; do
-    if [[ "$uid" =~ ^[0-9]+$ ]] && (( uid >= 1000 && uid < 60000 )) && [[ "$shell" != */nologin && "$shell" != */false ]] && [[ "$username" != "nobody" ]]; then users+=("$username"); fi
+    if [[ "$uid" =~ ^[0-9]+$ ]] && (( uid >= 1000 && uid < 60000 )) && [[ "$shell" != */nologin && "$shell" != */false ]] && [[ "$username" != "nobody" ]]; then
+      users+=("$username")
+    fi
   done < <(getent passwd)
+
   if (( NONINTERACTIVE )); then
     die "Refusing to configure Git/SSH/GitHub as root in non-interactive mode. Run as a regular user, or omit --non-interactive to select/create one."
   fi
+
   if ((${#users[@]})); then
     printf '\nAvailable regular users:\n'
     i=1
-    for u in "${users[@]}"; do printf '  %d) %s\n' "$i" "$u"; ((i+=1)); done
+    for u in "${users[@]}"; do
+      printf '  %d) %s\n' "$i" "$u"
+      ((i+=1))
+    done
+
     printf '  %d) Create a new user\n' "$i"
     read -r -p "Choose user [1-$i]: " choice || choice=""
-    if [[ "$choice" =~ ^[0-9]+$ ]] && (( choice>=1 && choice<=${#users[@]} )); then
+
+    if [[ "$choice" =~ ^[0-9]+$ ]] && (( choice >= 1 && choice <= ${#users[@]} )); then
       u=${users[choice-1]}
     elif [[ "$choice" == "$i" ]]; then
       create_bootstrap_user || return 1
@@ -99,23 +112,42 @@ handoff_to_user() {
     create_bootstrap_user || return 1
     u="$TARGET_USER"
   fi
+
   home=$(getent passwd "$u" | cut -d: -f6)
   [[ -n "$home" ]] || die "Could not determine home directory for $u."
 
-  # The original script may live under /root, which the selected user cannot traverse.
-  # Stage a temporary copy in a user-accessible location and remove it after execution.
-  staging=$(mktemp -d /tmp/git-bootstrap-handoff.XXXXXX) || die "Could not create staging directory."
-  cp -a "$SCRIPT_DIR/." "$staging/" || { rm -rf "$staging"; die "Could not stage project files."; }
-  chown -R "$u":"$(id -gn "$u")" "$staging" || { rm -rf "$staging"; die "Could not set staging ownership."; }
+  # Create a temporary project copy inside the selected user's home.
+  staging=$(mktemp -d "$home/.git-bootstrap-handoff.XXXXXX") || die "Could not create staging directory."
+
+  # Copy the project from its original location, which may be inaccessible to the user.
+  cp -a "$SCRIPT_DIR/." "$staging/" || {
+    rm -rf "$staging"
+    die "Could not stage project files."
+  }
+
+  chown -R "$u":"$(id -gn "$u")" "$staging" || {
+    rm -rf "$staging"
+    die "Could not set staging ownership."
+  }
+
+  log "Staged project for $u at $staging"
   log "Re-launching bootstrap as $u (HOME=$home)."
+
   set +e
-  # runuser -u "$u" -- env HOME="$home" USER="$u" LOGNAME="$u" GIT_BOOTSTRAP_HANDOFF=1 bash "$staging/bootstrap.sh" "${ORIGINAL_ARGS[@]}"
-  runuser -u "$u" -- env HOME="$home" USER="$u" LOGNAME="$u" GIT_BOOTSTRAP_HANDOFF=1 bash -c 'cd "$HOME" || exit 1; exec bash "$1" "${@:2}"' _ "$SCRIPT_DIR/bootstrap.sh" "${ORIGINAL_ARGS[@]}"
+  runuser -u "$u" -- env \
+    HOME="$home" \
+    USER="$u" \
+    LOGNAME="$u" \
+    GIT_BOOTSTRAP_HANDOFF=1 \
+    bash -c 'cd "$1" || exit 1; exec bash ./bootstrap.sh "${@:2}"' \
+    _ "$staging" "${ORIGINAL_ARGS[@]}"
   status=$?
   set -e
+
   rm -rf "$staging"
   exit "$status"
 }
+
 
 create_bootstrap_user() {
   local username
